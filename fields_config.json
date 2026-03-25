@@ -1,0 +1,270 @@
+[
+  {
+    "id": "nakit_benzerleri_tp",
+    "label": "1.1 Nakit ve Nakit Benzerleri — Cari TP",
+    "variants": ["nakit ve nakit benzerleri", "1.1 nakit ve nakit benzerleri", "nakit benzerleri", "nakit ve nakit"],
+    "row_code": "1.1",
+    "exclude_variants": ["1.1.1", "1.1.2", "1.1.3", "1.1.4", "nakit değerler ve merkez", "bankalar", "para piyasa"],
+    "column": "cari_tp",
+    "section": "VARLIKLAR"
+  },
+  {
+    "id": "nakit_benzerleri_yp",
+    "label": "1.1 Nakit ve Nakit Benzerleri — Cari YP",
+    "variants": ["nakit ve nakit benzerleri", "1.1 nakit ve nakit benzerleri", "nakit benzerleri", "nakit ve nakit"],
+    "row_code": "1.1",
+    "exclude_variants": ["1.1.1", "1.1.2", "1.1.3", "1.1.4", "nakit değerler ve merkez", "bankalar", "para piyasa"],
+    "column": "cari_yp",
+    "section": "VARLIKLAR"
+  },
+
+  {
+    "id": "gercege_uygun_kzara_tp",
+    "label": "1.2 Gerçeğe Uygun Değer Farkı K/Z'a Yansıtılan Finansal Varlıklar — Cari TP",
+    "variants": ["gerçeğe uygun değer farkı kâr zarara yansıtılan finansal varlıklar", "kar zarara yansıtılan finansal varlıklar", "1.2 gerçeğe uygun", "fvtpl"],
+    "row_code": "1.2",
+    "exclude_variants": ["1.2.1", "1.2.2", "1.2.3", "devlet borçlanma", "sermayede payı", "diğer finansal var"],
+    "column": "cari_tp",
+    "section": "VARLIKLAR"
+  },
+  {
+    "id": "gercege_uygun_kzara_yp",
+    "label": "1.2 Gerçeğe Uygun Değer Farkı K/Z'a Yansıtılan Finansal Varlıklar — Cari YP",
+    "variants": ["gerçeğe uygun değer farkı kâr zarara yansıtılan finansal varlıklar", "kar zarara yansıtılan finansal varlıklar", "1.2 gerçeğe uygun", "fvtpl"],
+    "row_code": "1.2",
+    "exclude_variants": ["1.2.1", "1.2.2", "1.2.3", "devlet borçlanma", "sermayede payı", "diğer finansal var"],
+    "column": "cari_yp",
+    "section": "VARLIKLAR"
+  },
+
+  {
+    "id": "gercege_uygun_diger_tp",
+    "label": "1.3 Gerçeğe Uygun Değer Farkı Diğer Kapsamlı Gelire Yansıtılan Finansal Varlıklar — Cari TP",
+    "variants": ["gerçeğe uygun değer farkı diğer kapsamlı gelire yansıtılan", "diğer kapsamlı gelire yansıtılan finansal varlıklar", "1.3 gerçeğe uygun", "fvtoci"],
+    "row_code": "1.3",
+    "exclude_variants": ["1.3.1", "1.3.2", "1.3.3", "devlet borçlanma", "sermayede payı", "diğer finansal var"],
+    "column": "cari_tp",
+    "section": "VARLIKLAR"
+  },
+  {
+    "id": "gercege_uygun_diger_yp",
+    "label": "1.3 Gerçeğe Uygun Değer Farkı Diğer Kapsamlı Gelire Yansıtılan Finansal Varlıklar — Cari YP",
+    "variants": ["gerçeğe uygun değer farkı diğer kapsamlı gelire yansıtılan", "diğer kapsamlı gelire yansıtılan finansal varlıklar", "1.3 gerçeğe uygun", "fvtoci"],
+    "row_code": "1.3",
+    "exclude_variants": ["1.3.1", "1.3.2", "1.3.3", "devlet borçlanma", "sermayede payı", "diğer finansal var"],
+    "column": "cari_yp",
+    "section": "VARLIKLAR"
+  },
+
+  {
+    "id": "itfa_24_tp",
+    "label": "2.4 İtfa Edilmiş Maliyeti ile Ölçülen Finansal Varlıklar — Cari TP",
+    "variants": ["2.4 itfa edilmiş maliyeti ile ölçülen", "itfa edilmiş maliyeti ile ölçülen finansal varlıklar"],
+    "row_code": "2.4",
+    "exclude_variants": ["2.4.1", "2.4.2", "itfa edilmiş maliyetle ölçülen finansal varlıklar (net)", "ii. itfa"],
+    "column": "cari_tp",
+    "section": "VARLIKLAR",
+    "note": "SADECE 2.4 numaralı alt satır — II. ana başlık değil"
+  },
+  {
+    "id": "itfa_24_yp",
+    "label": "2.4 İtfa Edilmiş Maliyeti ile Ölçülen Finansal Varlıklar — Cari YP",
+    "variants": ["2.4 itfa edilmiş maliyeti ile ölçülen", "itfa edilmiş maliyeti ile ölçülen finansal varlıklar"],
+    "row_code": "2.4",
+    "exclude_variants": ["2.4.1", "2.4.2", "itfa edilmiş maliyetle ölçülen finansal varlıklar (net)", "ii. itfa"],
+    "column": "cari_yp",
+    "section": "VARLIKLAR",
+    "note": "SADECE 2.4 numaralı alt satır"
+  },
+
+  {
+    "id": "krediler_tp",
+    "label": "2.1 Krediler — Cari TP",
+    "variants": ["krediler", "2.1 krediler", "kredi alacakları", "krediler (net)"],
+    "row_code": "2.1",
+    "exclude_variants": [],
+    "column": "cari_tp",
+    "section": "VARLIKLAR"
+  },
+  {
+    "id": "krediler_yp",
+    "label": "2.1 Krediler — Cari YP",
+    "variants": ["krediler", "2.1 krediler", "kredi alacakları", "krediler (net)"],
+    "row_code": "2.1",
+    "exclude_variants": [],
+    "column": "cari_yp",
+    "section": "VARLIKLAR"
+  },
+
+  {
+    "id": "beklenen_zarar_25_tp",
+    "label": "2.5 Beklenen Zarar Karşılıkları (-) — Cari TP",
+    "variants": ["2.5 beklenen zarar karşılıkları", "beklenen zarar karşılıkları"],
+    "row_code": "2.5",
+    "exclude_variants": ["1.1.4", "faktoring", "kiralama"],
+    "column": "cari_tp",
+    "section": "VARLIKLAR",
+    "note": "2.5 satırı — 1.1.4 veya diğer beklenen zarar karşılıkları değil"
+  },
+  {
+    "id": "beklenen_zarar_25_yp",
+    "label": "2.5 Beklenen Zarar Karşılıkları (-) — Cari YP",
+    "variants": ["2.5 beklenen zarar karşılıkları", "beklenen zarar karşılıkları"],
+    "row_code": "2.5",
+    "exclude_variants": ["1.1.4", "faktoring", "kiralama"],
+    "column": "cari_yp",
+    "section": "VARLIKLAR"
+  },
+
+  {
+    "id": "satis_amacli_tp",
+    "label": "III. Satış Amaçlı Elde Tutulan ve Durdurulan Faaliyetlere İlişkin Duran Varlıklar (Net) — Cari TP",
+    "variants": ["satış amaçlı elde tutulan ve durdurulan faaliyetlere ilişkin duran varlıklar", "satış amaçlı elde tutulan ve durdurulan", "iii. satış amaçlı", "durdurulan faaliyetlere ilişkin duran varlıklar"],
+    "row_code": "III",
+    "exclude_variants": ["3.1 satış amaçlı", "3.2 durdurulan"],
+    "column": "cari_tp",
+    "section": "VARLIKLAR"
+  },
+  {
+    "id": "satis_amacli_yp",
+    "label": "III. Satış Amaçlı Elde Tutulan ve Durdurulan Faaliyetlere İlişkin Duran Varlıklar (Net) — Cari YP",
+    "variants": ["satış amaçlı elde tutulan ve durdurulan faaliyetlere ilişkin duran varlıklar", "satış amaçlı elde tutulan ve durdurulan", "iii. satış amaçlı"],
+    "row_code": "III",
+    "exclude_variants": ["3.1 satış amaçlı", "3.2 durdurulan"],
+    "column": "cari_yp",
+    "section": "VARLIKLAR"
+  },
+
+  {
+    "id": "ortaklik_yatirimlari_tp",
+    "label": "IV. Ortaklık Yatırımları — Cari TP",
+    "variants": ["ortaklık yatırımları", "iv. ortaklık yatırımları", "ortaklik yatirimlari"],
+    "row_code": "IV",
+    "exclude_variants": ["iştirakler", "bağlı ortaklıklar", "4.1", "4.2", "4.3"],
+    "column": "cari_tp",
+    "section": "VARLIKLAR"
+  },
+  {
+    "id": "ortaklik_yatirimlari_yp",
+    "label": "IV. Ortaklık Yatırımları — Cari YP",
+    "variants": ["ortaklık yatırımları", "iv. ortaklık yatırımları", "ortaklik yatirimlari"],
+    "row_code": "IV",
+    "exclude_variants": ["iştirakler", "bağlı ortaklıklar", "4.1", "4.2", "4.3"],
+    "column": "cari_yp",
+    "section": "VARLIKLAR"
+  },
+
+  {
+    "id": "maddi_duran_tp",
+    "label": "V. Maddi Duran Varlıklar (Net) — Cari TP",
+    "variants": ["maddi duran varlıklar (net)", "maddi duran varlıklar", "v. maddi duran varlıklar"],
+    "row_code": "V",
+    "exclude_variants": ["maddi olmayan"],
+    "column": "cari_tp",
+    "section": "VARLIKLAR"
+  },
+  {
+    "id": "maddi_duran_yp",
+    "label": "V. Maddi Duran Varlıklar (Net) — Cari YP",
+    "variants": ["maddi duran varlıklar (net)", "maddi duran varlıklar", "v. maddi duran varlıklar"],
+    "row_code": "V",
+    "exclude_variants": ["maddi olmayan"],
+    "column": "cari_yp",
+    "section": "VARLIKLAR"
+  },
+
+  {
+    "id": "maddi_olmayan_tp",
+    "label": "VI. Maddi Olmayan Duran Varlıklar (Net) — Cari TP",
+    "variants": ["maddi olmayan duran varlıklar (net)", "maddi olmayan duran varlıklar", "vi. maddi olmayan"],
+    "row_code": "VI",
+    "exclude_variants": [],
+    "column": "cari_tp",
+    "section": "VARLIKLAR"
+  },
+  {
+    "id": "maddi_olmayan_yp",
+    "label": "VI. Maddi Olmayan Duran Varlıklar (Net) — Cari YP",
+    "variants": ["maddi olmayan duran varlıklar (net)", "maddi olmayan duran varlıklar", "vi. maddi olmayan"],
+    "row_code": "VI",
+    "exclude_variants": [],
+    "column": "cari_yp",
+    "section": "VARLIKLAR"
+  },
+
+  {
+    "id": "yatirim_gayrimenkul_tp",
+    "label": "VII. Yatırım Amaçlı Gayrimenkuller (Net) — Cari TP",
+    "variants": ["yatırım amaçlı gayrimenkuller (net)", "yatırım amaçlı gayrimenkuller", "vii. yatırım amaçlı gayrimenkuller"],
+    "row_code": "VII",
+    "exclude_variants": [],
+    "column": "cari_tp",
+    "section": "VARLIKLAR"
+  },
+  {
+    "id": "yatirim_gayrimenkul_yp",
+    "label": "VII. Yatırım Amaçlı Gayrimenkuller (Net) — Cari YP",
+    "variants": ["yatırım amaçlı gayrimenkuller (net)", "yatırım amaçlı gayrimenkuller", "vii. yatırım amaçlı gayrimenkuller"],
+    "row_code": "VII",
+    "exclude_variants": [],
+    "column": "cari_yp",
+    "section": "VARLIKLAR"
+  },
+
+  {
+    "id": "cari_vergi_varligi_tp",
+    "label": "VIII. Cari Vergi Varlığı — Cari TP",
+    "variants": ["cari vergi varlığı", "viii. cari vergi varlığı", "cari vergi varligi"],
+    "row_code": "VIII",
+    "exclude_variants": ["cari vergi borcu"],
+    "column": "cari_tp",
+    "section": "VARLIKLAR"
+  },
+  {
+    "id": "cari_vergi_varligi_yp",
+    "label": "VIII. Cari Vergi Varlığı — Cari YP",
+    "variants": ["cari vergi varlığı", "viii. cari vergi varlığı", "cari vergi varligi"],
+    "row_code": "VIII",
+    "exclude_variants": ["cari vergi borcu"],
+    "column": "cari_yp",
+    "section": "VARLIKLAR"
+  },
+
+  {
+    "id": "ertelenmis_vergi_varligi_tp",
+    "label": "IX. Ertelenmiş Vergi Varlığı — Cari TP",
+    "variants": ["ertelenmiş vergi varlığı", "ix. ertelenmiş vergi varlığı", "ertelenmis vergi varligi"],
+    "row_code": "IX",
+    "exclude_variants": ["ertelenmiş vergi borcu"],
+    "column": "cari_tp",
+    "section": "VARLIKLAR"
+  },
+  {
+    "id": "ertelenmis_vergi_varligi_yp",
+    "label": "IX. Ertelenmiş Vergi Varlığı — Cari YP",
+    "variants": ["ertelenmiş vergi varlığı", "ix. ertelenmiş vergi varlığı", "ertelenmis vergi varligi"],
+    "row_code": "IX",
+    "exclude_variants": ["ertelenmiş vergi borcu"],
+    "column": "cari_yp",
+    "section": "VARLIKLAR"
+  },
+
+  {
+    "id": "diger_aktifler_tp",
+    "label": "X. Diğer Aktifler (Net) — Cari TP",
+    "variants": ["diğer aktifler", "x. diğer aktifler", "diger aktifler", "diğer aktifler (net)"],
+    "row_code": "X",
+    "exclude_variants": [],
+    "column": "cari_tp",
+    "section": "VARLIKLAR"
+  },
+  {
+    "id": "diger_aktifler_yp",
+    "label": "X. Diğer Aktifler (Net) — Cari YP",
+    "variants": ["diğer aktifler", "x. diğer aktifler", "diger aktifler", "diğer aktifler (net)"],
+    "row_code": "X",
+    "exclude_variants": [],
+    "column": "cari_yp",
+    "section": "VARLIKLAR"
+  }
+]

@@ -1,187 +1,445 @@
 import streamlit as st
-import os
-import tempfile
+import os, tempfile, re
 from io import BytesIO
 from openpyxl import Workbook
-from openpyxl.styles import Font, Alignment, PatternFill
-from langchain_community.document_loaders import PyPDFLoader
-from langchain_ollama import ChatOllama
 from pydantic import BaseModel, Field
 from typing import Optional
 
-# --- SAYFA AYARLARI ---
-st.set_page_config(page_title="Banka Denetim Analizörü", layout="wide")
+from docling.document_converter import DocumentConverter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_chroma import Chroma
+from langchain_ollama import ChatOllama
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_community.retrievers import BM25Retriever
+from langchain_classic.retrievers import EnsembleRetriever
 
-st.title("🏦 Banka Denetim Raporu Analizörü (AI)")
-st.markdown("""
-Bu uygulama, yüklediğiniz banka denetim raporu (PDF) içerisindeki finansal verileri 
-**Llama 3.2** modeli ile analiz eder ve formatlı bir Excel dosyasına dönüştürür.
-""")
 
-# --- 1. VERİ MODELİ (PYDANTIC) ---
+# =============================================================================
+# VERİ MODELİ
+# =============================================================================
 class DenetimVerileri(BaseModel):
-    banka_adi: str = Field(description="Raporun en üstünde yer alan bankanın tam ticari unvanı.")
-    donem: str = Field(description="Raporun ait olduğu tarih ve dönem bilgisi (Örn: 30 Haziran 2025).")
-    
-    nakit_benzerleri_tp: Optional[int] = Field(description="Cari Dönem 'Nakit ve Nakit Benzerleri' TP değeri.")
-    nakit_benzerleri_yp: Optional[int] = Field(description="Cari Dönem 'Nakit ve Nakit Benzerleri' YP değeri.")
-    
-    fv_kar_zarar_tp: Optional[int] = Field(description="Cari Dönem 'Gerçeğe Uygun Değer Farkı Kâr Zarara Yansıtılan' TP değeri.")
-    fv_kar_zarar_yp: Optional[int] = Field(description="Cari Dönem 'Gerçeğe Uygun Değer Farkı Kâr Zarara Yansıtılan' YP değeri.")
-    
-    fv_diger_kapsamli_tp: Optional[int] = Field(description="Cari Dönem 'Gerçeğe Uygun Değer Farkı Diğer Kapsamlı Gelire Yansıtılan' TP değeri.")
-    fv_diger_kapsamli_yp: Optional[int] = Field(description="Cari Dönem 'Gerçeğe Uygun Değer Farkı Diğer Kapsamlı Gelire Yansıtılan' YP değeri.")
-    
-    itfa_edilmis_tp: Optional[int] = Field(description="Cari Dönem 'İtfa Edilmiş Maliyeti ile Ölçülen' TP değeri.")
-    itfa_edilmis_yp: Optional[int] = Field(description="Cari Dönem 'İtfa Edilmiş Maliyeti ile Ölçülen' YP değeri.")
-    
-    beklenen_zarar_tp: Optional[int] = Field(description="Cari Dönem 'Beklenen Zarar Karşılıkları (-)' TP değeri.")
-    beklenen_zarar_yp: Optional[int] = Field(description="Cari Dönem 'Beklenen Zarar Karşılıkları (-)' YP değeri.")
-    
-    ortaklik_yatirimlari_tp: Optional[int] = Field(description="Cari Dönem 'ORTAKLIK YATIRIMLARI' veya 'İştirakler' TP değeri.")
-    ortaklik_yatirimlari_yp: Optional[int] = Field(description="Cari Dönem 'ORTAKLIK YATIRIMLARI' veya 'İştirakler' YP değeri.")
-    
-    maddi_duran_tp: Optional[int] = Field(description="Cari Dönem 'MADDİ DURAN VARLIKLAR (Net)' TP değeri.")
-    maddi_duran_yp: Optional[int] = Field(description="Cari Dönem 'MADDİ DURAN VARLIKLAR (Net)' YP değeri.")
-    
-    maddi_olmayan_tp: Optional[int] = Field(description="Cari Dönem 'MADDİ OLMAYAN DURAN VARLIKLAR (Net)' TP değeri.")
-    maddi_olmayan_yp: Optional[int] = Field(description="Cari Dönem 'MADDİ OLMAYAN DURAN VARLIKLAR (Net)' YP değeri.")
-    
-    diger_aktifler_tp: Optional[int] = Field(description="Cari Dönem 'DİĞER AKTİFLER' TP değeri.")
-    diger_aktifler_yp: Optional[int] = Field(description="Cari Dönem 'DİĞER AKTİFLER' YP değeri.")
-    
-    varliklar_toplami_tp: Optional[int] = Field(description="Cari Dönem 'VARLIKLAR TOPLAMI' TP değeri.")
-    varliklar_toplami_yp: Optional[int] = Field(description="Cari Dönem 'VARLIKLAR TOPLAMI' YP değeri.")
+    banka_adi: str = Field(description="Bankanın tam resmi adı.")
+    donem: str = Field(description="Cari dönem tarihi. Örnek: '30 Haziran 2025'.")
+    nakit_benzerleri_tp: Optional[str] = Field(default=None)
+    nakit_benzerleri_yp: Optional[str] = Field(default=None)
+    varliklar_toplami_tp: Optional[str] = Field(default=None)
+    varliklar_toplami_yp: Optional[str] = Field(default=None)
 
-# --- 2. EXCEL OLUŞTURMA FONKSİYONU ---
-def create_excel_report(data: DenetimVerileri):
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Denetim Verileri"
 
-    # Tasarım
-    bold_font = Font(bold=True, color="FFFFFF")
-    header_fill = PatternFill(start_color="4F81BD", end_color="4F81BD", fill_type="solid")
-    center_align = Alignment(horizontal="center", vertical="center")
-    
-    ws.column_dimensions['A'].width = 50
-    ws.column_dimensions['B'].width = 20
-    ws.column_dimensions['C'].width = 20
+# =============================================================================
+# YARDIMCI: Sayı metnini temizle (doğrulama için)
+# =============================================================================
+def to_num(val_str) -> int:
+    if not val_str:
+        return 0
+    clean = re.sub(r'[^\d]', '', str(val_str))
+    return int(clean) if clean else 0
 
-    # Genel Bilgiler
-    ws['A1'] = "BANKA ADI:"
-    ws['B1'] = data.banka_adi
-    ws['A2'] = "DÖNEM:"
-    ws['B2'] = data.donem
-    
-    # Başlıklar
-    headers = ["KALEMLER", "TP (Türk Parası)", "YP (Yabancı Para)"]
-    ws.append([]) 
-    ws.append(headers) # 4. Satır
 
-    for cell in ws[4]:
-        cell.font = bold_font
-        cell.fill = header_fill
-        cell.alignment = center_align
+# =============================================================================
+# AŞAMA 1: DETERMINISTIK TABLO PARSER
+#
+# Docling'in ürettiği markdown tablosunu satır satır okur.
+# Sütun pozisyonlarını başlık satırından çıkarır → TP/YP karışması imkansız.
+# LLM kullanmaz, regex ile doğrudan değeri alır.
+# =============================================================================
 
-    # Satır Etiketleri ve Değerler
-    rows_map = [
-        ("Nakit ve Nakit Benzerleri", data.nakit_benzerleri_tp, data.nakit_benzerleri_yp),
-        ("G.U.D Farkı K/Z Yansıtılan Finansal Varlıklar", data.fv_kar_zarar_tp, data.fv_kar_zarar_yp),
-        ("G.U.D Farkı Diğer Kapsamlı Gelire Yansıtılan", data.fv_diger_kapsamli_tp, data.fv_diger_kapsamli_yp),
-        ("İtfa Edilmiş Maliyeti ile Ölçülen", data.itfa_edilmis_tp, data.itfa_edilmis_yp),
-        ("Beklenen Zarar Karşılıkları (-)", data.beklenen_zarar_tp, data.beklenen_zarar_yp),
-        ("Ortaklık Yatırımları", data.ortaklik_yatirimlari_tp, data.ortaklik_yatirimlari_yp),
-        ("Maddi Duran Varlıklar (Net)", data.maddi_duran_tp, data.maddi_duran_yp),
-        ("Maddi Olmayan Duran Varlıklar (Net)", data.maddi_olmayan_tp, data.maddi_olmayan_yp),
-        ("Diğer Aktifler", data.diger_aktifler_tp, data.diger_aktifler_yp),
-        ("VARLIKLAR TOPLAMI", data.varliklar_toplami_tp, data.varliklar_toplami_yp)
+def _find_tp_yp_columns(header_row: list[str]) -> tuple[int, int]:
+    """
+    Başlık satırından Cari Dönem TP ve YP sütun indekslerini bulur.
+    Docling'in ürettiği format: [satır_kodu, açıklama, dipnot, TP, YP, Toplam, TP, YP, Toplam]
+    Cari dönem her zaman ilk TP/YP çiftidir.
+    """
+    tp_idx, yp_idx = -1, -1
+    for i, cell in enumerate(header_row):
+        cell_clean = cell.strip().upper()
+        if cell_clean == "TP" and tp_idx == -1:
+            tp_idx = i
+        elif cell_clean == "YP" and yp_idx == -1 and tp_idx != -1:
+            yp_idx = i
+            break  # İlk TP/YP çiftini bulduk, dur
+    return tp_idx, yp_idx
+
+
+def _parse_table_row(row: str) -> list[str]:
+    """Markdown tablo satırını hücrelere böler."""
+    cells = row.strip().strip('|').split('|')
+    return [c.strip() for c in cells]
+
+
+def deterministic_parse(markdown_text: str) -> dict:
+    """
+    Markdown tablosundan hedef değerleri deterministik olarak çeker.
+    Döndürür: {nakit_tp, nakit_yp, varlik_tp, varlik_yp} veya None değerler.
+    """
+    result = {
+        "nakit_tp": None,
+        "nakit_yp": None,
+        "varlik_tp": None,
+        "varlik_yp": None,
+        "tp_col": -1,
+        "yp_col": -1,
+    }
+
+    lines = markdown_text.split('\n')
+    in_bilanco = False
+    tp_col, yp_col = -1, -1
+    header_found = False
+
+    for i, line in enumerate(lines):
+        # Bilanço tablosunu bul
+        if 'BİLANÇO' in line.upper() or 'FİNANSAL DURUM TABLOSU' in line.upper():
+            in_bilanco = True
+
+        if not in_bilanco:
+            continue
+
+        if '|' not in line:
+            continue
+
+        cells = _parse_table_row(line)
+
+        # Ayırıcı satırları atla (--- içerenler)
+        if all(re.match(r'^[-:]+$', c) or c == '' for c in cells):
+            continue
+
+        # TP/YP başlık satırını bul
+        upper_cells = [c.upper() for c in cells]
+        if 'TP' in upper_cells and 'YP' in upper_cells and not header_found:
+            tp_col, yp_col = _find_tp_yp_columns(cells)
+            result["tp_col"] = tp_col
+            result["yp_col"] = yp_col
+            header_found = True
+            st.caption(f"  📍 Sütun tespiti: TP={tp_col}, YP={yp_col} | Başlık: {cells}")
+            continue
+
+        if not header_found or tp_col == -1:
+            continue
+
+        # Satır içeriğini kontrol et
+        row_text = ' '.join(cells).upper()
+
+        # 1.1 Nakit ve Nakit Benzerleri satırı
+        # Dikkat: "1.1.1", "1.1.2" gibi alt kalemleri ALMA
+        if result["nakit_tp"] is None:
+            # Satırın ilk anlamlı hücresi "1.1" ile başlamalı, "1.1." ile başlamamalı
+            first_meaningful = next((c for c in cells if c.strip()), "")
+            is_11_row = (
+                first_meaningful.strip() == "1.1" or
+                (
+                    'NAKİT VE NAKİT BENZERLERİ' in row_text and
+                    '1.1.1' not in row_text and
+                    '1.1.2' not in row_text and
+                    '1.1.3' not in row_text and
+                    '1.1.4' not in row_text
+                )
+            )
+            if is_11_row and len(cells) > max(tp_col, yp_col):
+                nakit_tp = cells[tp_col].strip()
+                nakit_yp = cells[yp_col].strip()
+                if nakit_tp and nakit_tp != '-' and nakit_tp != '':
+                    result["nakit_tp"] = nakit_tp
+                    result["nakit_yp"] = nakit_yp if nakit_yp and nakit_yp != '-' else None
+                    st.caption(f"  ✅ 1.1 Nakit satırı bulundu: TP={nakit_tp}, YP={nakit_yp}")
+
+        # VARLIKLAR TOPLAMI satırı (en alt, kalın — ara toplamları alma)
+        is_varlik_toplami = (
+            'VARLIKLAR TOPLAMI' in row_text or
+            'AKTİF TOPLAMI' in row_text
+        ) and 'FİNANSAL VARLIKLAR' not in row_text  # Ara toplam değil
+
+        if is_varlik_toplami and len(cells) > max(tp_col, yp_col):
+            varlik_tp = cells[tp_col].strip()
+            varlik_yp = cells[yp_col].strip()
+            if varlik_tp and varlik_tp != '-':
+                result["varlik_tp"] = varlik_tp
+                result["varlik_yp"] = varlik_yp if varlik_yp and varlik_yp != '-' else None
+                st.caption(f"  ✅ VARLIKLAR TOPLAMI satırı bulundu: TP={varlik_tp}, YP={varlik_yp}")
+
+    return result
+
+
+# =============================================================================
+# AŞAMA 2: BANKA ADI VE DÖNEMİ LLM İLE ÇEK (sadece metadata)
+# =============================================================================
+def extract_metadata_llm(llm, raw_text_head: str) -> tuple[str, str]:
+    prompt = f"""Aşağıdaki banka raporunun başlangıç metninden:
+1. Bankanın TAM RESMİ ADINI
+2. Raporun Cari Dönem TARİHİNİ (örn: "30 Haziran 2025")
+bul ve JSON olarak döndür.
+
+Format: {{"banka_adi": "...", "donem": "..."}}
+
+Bulamazsan: {{"banka_adi": "Bilinmeyen Banka", "donem": "Bilinmiyor"}}
+
+METİN:
+{raw_text_head[:2000]}
+"""
+    try:
+        response = llm.invoke(prompt)
+        content = response.content if hasattr(response, 'content') else str(response)
+        import json
+        # JSON bloğunu çıkar
+        match = re.search(r'\{[^{}]+\}', content, re.DOTALL)
+        if match:
+            data = json.loads(match.group())
+            return data.get("banka_adi", "Bilinmeyen Banka"), data.get("donem", "Bilinmiyor")
+    except Exception:
+        pass
+    return "Bilinmeyen Banka", "Bilinmiyor"
+
+
+# =============================================================================
+# AŞAMA 3: DETERMINISTIK BAŞARISIZ OLURSA LLM FALLBACK
+# =============================================================================
+def extract_table_blocks(markdown_text: str) -> str:
+    lines = markdown_text.split('\n')
+    table_blocks, current_block = [], []
+    context_header, in_table = "", False
+    for line in lines:
+        if line.startswith('#'):
+            context_header = line
+        if '|' in line:
+            if not in_table:
+                in_table = True
+                if context_header:
+                    current_block.append(context_header)
+            current_block.append(line)
+        else:
+            if in_table and line.strip() == "":
+                table_blocks.append('\n'.join(current_block))
+                current_block, in_table = [], False
+    if current_block:
+        table_blocks.append('\n'.join(current_block))
+    return "\n\n---TABLO---\n\n".join(table_blocks)
+
+
+def run_hybrid_retrieval(markdown_text: str) -> str:
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=3000, chunk_overlap=250,
+        separators=["\n# ", "\n## ", "\n### ", "\n\n"]
+    )
+    chunks = text_splitter.split_text(markdown_text)
+    raw_tables = extract_table_blocks(markdown_text)
+    relevant_tables = [
+        t for t in raw_tables.split("\n\n---TABLO---\n\n")
+        if any(k in t.upper() for k in ["VARLIK", "BİLANÇO", "AKTİF", "NAKİT", "FİNANSAL DURUM"])
     ]
+    table_context = "\n\n---\n\n".join(relevant_tables)
 
-    for i, (label, val_tp, val_yp) in enumerate(rows_map, start=5):
-        ws[f'A{i}'] = label
-        ws[f'A{i}'].font = Font(bold=True)
-        ws[f'B{i}'] = val_tp
-        ws[f'C{i}'] = val_yp
+    embeddings = HuggingFaceEmbeddings(
+        model_name="intfloat/multilingual-e5-base",
+        model_kwargs={'device': 'mps'},
+        encode_kwargs={'normalize_embeddings': True}
+    )
+    vectorstore = Chroma.from_texts(texts=chunks, embedding=embeddings)
+    v_retriever = vectorstore.as_retriever(search_kwargs={"k": 4})
+    bm25_retriever = BM25Retriever.from_texts(chunks)
+    bm25_retriever.k = 4
+    ensemble_retriever = EnsembleRetriever(
+        retrievers=[bm25_retriever, v_retriever],
+        weights=[0.7, 0.3]
+    )
+    queries = [
+        "1.1 Nakit ve Nakit Benzerleri Cari Dönem TP YP",
+        "VARLIKLAR TOPLAMI Cari Dönem TP YP",
+        "KONSOLİDE OLMAYAN BİLANÇO FİNANSAL DURUM TABLOSU VARLIKLAR",
+    ]
+    retrieved = set()
+    for q in queries:
+        for d in ensemble_retriever.invoke(q):
+            retrieved.add(d.page_content)
+    return f"## FİLTRELENMİŞ TABLOLAR:\n{table_context}\n\n## EK BAĞLAM:\n" + "\n---\n".join(retrieved)
 
-    # Excel'i belleğe kaydet
-    output = BytesIO()
-    wb.save(output)
-    output.seek(0)
-    return output
 
-# --- 3. ANA UYGULAMA AKIŞI ---
+def llm_fallback_extract(structured_llm, context: str) -> DenetimVerileri:
+    """Deterministik parse başarısız olursa LLM ile dene."""
+    prompt = f"""
+Sen kıdemli bir banka denetçisisin.
 
-# Kenar Çubuğu Ayarları
+## TABLO YAPISI:
+Bu Türk bankası bilançosu tablosunda sütun sırası SOLDAN SAĞA:
+  [Satır No] | [Açıklama] | [Dipnot] | Cari TP | Cari YP | Cari Toplam | Önceki TP | Önceki YP | Önceki Toplam
+
+## GÖREV:
+1. "1.1  Nakit ve Nakit Benzerleri" satırını bul (1.1.1, 1.1.2, 1.1.3 DEĞİL — tam "1.1")
+   → nakit_benzerleri_tp = Cari TP değeri (tabloda nasılsa birebir al)
+   → nakit_benzerleri_yp = Cari YP değeri (tabloda nasılsa birebir al)
+
+2. "VARLIKLAR TOPLAMI" satırını bul (tablonun en son satırı)
+   → varliklar_toplami_tp = Cari TP değeri
+   → varliklar_toplami_yp = Cari YP değeri
+
+## KESİN KURALLAR:
+- SADECE "Cari Dönem" sütunları. "Önceki Dönem" = YASAK.
+- Rakamları tabloda nasılsa birebir al ("1,234,567") ise öyle yaz).
+- Net göremiyorsan None döndür. Asla tahmin etme.
+
+## TABLO:
+{context[:8000]}
+"""
+    return structured_llm.invoke(prompt)
+
+
+# =============================================================================
+# DOĞRULAMA
+# =============================================================================
+def validate(result: DenetimVerileri, context: str) -> list[str]:
+    issues = []
+    if result.nakit_benzerleri_tp and result.varliklar_toplami_tp:
+        if to_num(result.nakit_benzerleri_tp) > to_num(result.varliklar_toplami_tp):
+            issues.append("HATA: Nakit TP > Varlık Toplamı TP — mantık hatası.")
+    if result.nakit_benzerleri_yp and result.varliklar_toplami_yp:
+        if to_num(result.nakit_benzerleri_yp) > to_num(result.varliklar_toplami_yp):
+            issues.append("HATA: Nakit YP > Varlık Toplamı YP — mantık hatası.")
+    if result.varliklar_toplami_tp and result.varliklar_toplami_yp:
+        if result.varliklar_toplami_tp == result.varliklar_toplami_yp:
+            issues.append("UYARI: TP ve YP değerleri aynı — sütun karışmış olabilir.")
+    return issues
+
+
+# =============================================================================
+# STREAMLIT ARAYÜZÜ
+# =============================================================================
+st.set_page_config(page_title="Banka Analiz Pipeline V6", layout="wide")
+st.title("🏦 Banka Analiz Hüseyin Çiyik V6")
+st.caption("Deterministik Parser → LLM Metadata → LLM Fallback (gerekirse)")
+
 with st.sidebar:
-    st.header("Ayarlar")
-    model_name = st.selectbox("Model Seçimi", ["llama3.2", "llama3", "mistral"], index=0)
-    page_start = st.number_input("Başlangıç Sayfası (0 indexli)", value=9, min_value=0)
-    page_end = st.number_input("Bitiş Sayfası", value=11, min_value=1)
-    st.info("Not: Varsayılan olarak kodundaki gibi 9-11 arası sayfaları okur. Tüm PDF için genişletebilirsin.")
+    st.subheader("⚙️ Model Ayarları")
+    model_name = st.selectbox(
+        "LLM Model",
+        ["qwen2.5:7b", "gemma2", "mistral-nemo", "llama3.1:8b"],
+        index=0,
+    )
+    num_ctx = st.slider("Context Window", 4096, 16384, 8192, 1024)
+    
 
-# EKSİK OLAN SATIR BUYDU 👇
-uploaded_file = st.file_uploader("PDF Raporunu Yükleyin", type="pdf")
+uploaded_file = st.file_uploader("📄 PDF Rapor Yükle", type="pdf")
 
 if uploaded_file is not None:
-    if st.button("Analiz Et ve Excel Oluştur"):
-        
-        with st.spinner('PDF işleniyor ve AI analiz yapıyor...'):
+    if st.button("🚀 Analiz Et"):
+        with st.spinner("Analiz başlatılıyor..."):
             try:
-                # 1. PDF'i geçici dosyaya kaydet (LangChain loader için gerekli)
-                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
-                    tmp_file.write(uploaded_file.getvalue())
-                    tmp_file_path = tmp_file.name
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                    tmp.write(uploaded_file.getvalue())
+                    tmp_path = tmp.name
 
-                # 2. PDF Yükleme ve Metin Çıkarma
-                loader = PyPDFLoader(tmp_file_path)
-                pages = loader.load()
-                
-                # Sayfa aralığını kontrol et
-                if page_end > len(pages):
-                    st.warning(f"PDF sadece {len(pages)} sayfa. Bitiş sayfası ayarlandı.")
-                    page_end = len(pages)
+                st.info("📄 PDF → Markdown...")
+                converter = DocumentConverter()
+                md_text = converter.convert(tmp_path).document.export_to_markdown()
+                os.remove(tmp_path)
+                st.success(f"✅ Markdown hazır ({len(md_text):,} karakter)")
 
-                selected_text = "".join([p.page_content for p in pages[page_start:page_end]])
-                
-                # Geçici dosyayı temizle
-                os.remove(tmp_file_path)
+                with st.expander("📝 Ham Markdown (ilk 4000 karakter)"):
+                    st.text(md_text[:4000])
 
-                if not selected_text.strip():
-                    st.error("Seçilen sayfalardan metin okunamadı!")
-                    st.stop()
+                # --- AŞAMA 1: Deterministik Parse ---
+                st.info("🔢 Aşama 1: Deterministik tablo parsing...")
+                with st.expander("🔍 Parser Detayları"):
+                    parsed = deterministic_parse(md_text)
 
-                # 3. LLM Kurulumu ve Çağrı
-                llm = ChatOllama(model=model_name, temperature=0)
+                nakit_tp  = parsed["nakit_tp"]
+                nakit_yp  = parsed["nakit_yp"]
+                varlik_tp = parsed["varlik_tp"]
+                varlik_yp = parsed["varlik_yp"]
+
+                det_success = all([nakit_tp, nakit_yp, varlik_tp, varlik_yp])
+
+                # --- LLM (metadata + fallback) ---
+                llm = ChatOllama(
+                    model=model_name,
+                    temperature=0,
+                    num_ctx=num_ctx,
+                    format="json",
+                    seed=42,
+                )
                 structured_llm = llm.with_structured_output(DenetimVerileri)
-                
-                prompt = f"""
-                Aşağıdaki banka denetim raporu metnini analiz et ve istenen finansal verileri çıkar.
-                Eğer veriyi bulamazsan ilgili alan için null/None döndür. Asla tahmin yürütme.
-                
-                RAPOR METNİ:
-                {selected_text}
-                """
-                
-                # AI Analizi
-                result = structured_llm.invoke(prompt)
-                
-                # 4. Sonuçları Göster (Opsiyonel Preview)
-                with st.expander("Çıkarılan Ham Verileri Gör"):
-                    st.json(result.model_dump())
 
-                # 5. Excel Oluşturma
-                excel_file = create_excel_report(result)
+                # Banka adı ve dönem her zaman LLM ile
+                st.info("🤖 Aşama 2: Banka adı ve dönem tespiti...")
+                banka_adi, donem = extract_metadata_llm(llm, md_text)
+                st.success(f"✅ Banka: {banka_adi} | Dönem: {donem}")
+
+                if det_success:
+                    st.success("✅ Deterministik parse başarılı — LLM'e gerek yok.")
+                    final = DenetimVerileri(
+                        banka_adi=banka_adi,
+                        donem=donem,
+                        nakit_benzerleri_tp=nakit_tp,
+                        nakit_benzerleri_yp=nakit_yp,
+                        varliklar_toplami_tp=varlik_tp,
+                        varliklar_toplami_yp=varlik_yp,
+                    )
+                else:
+                    st.warning(
+                        f"⚠️ Deterministik parse eksik "
+                        f"(nakit_tp={nakit_tp}, nakit_yp={nakit_yp}, "
+                        f"varlik_tp={varlik_tp}, varlik_yp={varlik_yp}). "
+                        f"LLM fallback başlatılıyor..."
+                    )
+                    context = run_hybrid_retrieval(md_text)
+                    with st.expander("🔍 LLM Fallback Context"):
+                        st.text(context[:5000])
+                    llm_result = llm_fallback_extract(structured_llm, context)
+                    # Deterministik başarılı olanları koru, başarısızları LLM ile doldur
+                    final = DenetimVerileri(
+                        banka_adi=banka_adi,
+                        donem=donem,
+                        nakit_benzerleri_tp=nakit_tp or llm_result.nakit_benzerleri_tp,
+                        nakit_benzerleri_yp=nakit_yp or llm_result.nakit_benzerleri_yp,
+                        varliklar_toplami_tp=varlik_tp or llm_result.varliklar_toplami_tp,
+                        varliklar_toplami_yp=varlik_yp or llm_result.varliklar_toplami_yp,
+                    )
+
+                # Doğrulama
+                issues = validate(final, md_text)
+                if issues:
+                    st.warning("⚠️ Doğrulama sorunları:")
+                    for i in issues:
+                        st.caption(f"  → {i}")
+                else:
+                    st.success("✅ Doğrulama geçti.")
+
+                # --- SONUÇLAR ---
+                st.divider()
+                st.subheader(f"🏦 {final.banka_adi}")
+                st.caption(f"📅 {final.donem}")
+
                 
-                st.success("İşlem Başarılı! Excel dosyanız hazır.")
-                
-                # İndirme Butonu
+                col1, col2 = st.columns(2)
+
+                def fmt(v): return str(v) if v else "⚠️ Bulunamadı"
+
+                with col1:
+                    st.metric("1.1 Nakit Benzerleri — TP", fmt(final.nakit_benzerleri_tp))
+                    st.metric("VARLIKLAR TOPLAMI — TP", fmt(final.varliklar_toplami_tp))
+                with col2:
+                    st.metric("1.1 Nakit Benzerleri — YP", fmt(final.nakit_benzerleri_yp))
+                    st.metric("VARLIKLAR TOPLAMI — YP", fmt(final.varliklar_toplami_yp))
+
+                with st.expander("📋 Ham JSON"):
+                    st.json(final.model_dump())
+
+                # Excel
+                wb = Workbook()
+                ws = wb.active
+                ws.title = "Denetim Verileri"
+                ws.append(["Banka Adı", "Dönem", "Nakit ve Nakit Benzerleri TP", "Nakit ve Nakit Benzerleri YP", "Varlık Toplam TP", "Varlık Toplam YP"])
+                ws.append([
+                    final.banka_adi, final.donem,
+                    final.nakit_benzerleri_tp, final.nakit_benzerleri_yp,
+                    final.varliklar_toplami_tp, final.varliklar_toplami_yp,
+                ])
+                buf = BytesIO()
+                wb.save(buf)
+                buf.seek(0)
                 st.download_button(
-                    label="📥 Excel Raporunu İndir",
-                    data=excel_file,
-                    file_name=f"analiz_sonucu_{result.donem}.xlsx",
+                    "📥 Excel İndir", buf,
+                    file_name=f"{final.banka_adi}_{final.donem}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 )
 
             except Exception as e:
-                st.error(f"Bir hata oluştu: {str(e)}")
+                st.error(f"Hata: {e}")
+                st.exception(e)
