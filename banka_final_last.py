@@ -613,99 +613,149 @@ with st.sidebar:
     st.divider()
     st.caption("💰 Maliyet: ~$0.01-0.03/rapor")
 
-uploaded_file = st.file_uploader("📄 PDF Rapor Yükle", type="pdf")
+def process_single_pdf(client, pdf_bytes):
+    """Tek bir PDF'i işler ve (banka_adi, donem, all_results, method_log) döner."""
+    all_results = {}
+    method_log = {}
 
-if uploaded_file and api_key:
+    progress = st.progress(0, "Başlatılıyor...")
+
+    progress.progress(5, "📄 PDF metne dönüştürülüyor...")
+    pages_text = extract_pages_text(pdf_bytes)
+    st.success(f"✅ {len(pages_text)} sayfa okundu")
+
+    progress.progress(8, "🤖 Banka adı ve dönem tespiti...")
+    first_text = pages_text.get(0, "") + pages_text.get(1, "")
+    banka_adi, donem = extract_metadata(client, first_text)
+    st.info(f"🏦 **{banka_adi}** | 📅 **{donem}**")
+
+    total_groups = len(EXTRACTION_GROUPS)
+
+    for g_idx, group in enumerate(EXTRACTION_GROUPS):
+        pct = 8 + int((g_idx / total_groups) * 87)
+        progress.progress(pct, f"🔍 {group['name']}...")
+
+        with st.status(f"📊 {group['name']}", expanded=False) as status:
+            page_indices = find_relevant_pages(pages_text, group["keywords"])
+            if not page_indices:
+                page_indices = list(range(min(4, len(pages_text))))
+
+            context = build_text_context(pages_text, page_indices)
+            st.caption(f"İlgili sayfalar: {[i+1 for i in page_indices]}")
+
+            st.caption("1️⃣ Metin tabanlı extraction (Haiku)...")
+            result, success = extract_with_text(client, group, context, banka_adi, donem)
+
+            if success:
+                method_log[group["id"]] = "Metin (Haiku)"
+                found = sum(1 for v in result.values() if v and v != "null")
+                status.update(
+                    label=f"✅ {group['name']} — {found}/{len(group['fields'])} | Metin",
+                    state="complete"
+                )
+            else:
+                st.caption("2️⃣ Daha geniş arama...")
+                all_pages = list(range(min(10, len(pages_text))))
+                wider_context = build_text_context(pages_text, all_pages)
+                result2, _ = extract_with_text(client, group, wider_context, banka_adi, donem)
+                for k, v in result2.items():
+                    if v and v != "null" and (not result.get(k) or result.get(k) == "null"):
+                        result[k] = v
+                method_log[group["id"]] = "Metin Geniş (Haiku)"
+                found = sum(1 for v in result.values() if v and v != "null")
+                status.update(
+                    label=f"✅ {group['name']} — {found}/{len(group['fields'])} | Geniş",
+                    state="complete"
+                )
+
+            all_results.update(result)
+            time.sleep(15)
+
+    progress.progress(100, "✅ Tamamlandı!")
+    return banka_adi, donem, all_results, method_log
+
+
+def render_results(res, key_suffix):
+    """Kaydedilmiş bir PDF sonucunu ve Excel indirme butonunu render eder.
+
+    res: {banka_adi, donem, all_results, method_log, excel_bytes, file_name}
+    """
+    banka_adi = res["banka_adi"]
+    donem = res["donem"]
+    all_results = res["all_results"]
+    method_log = res["method_log"]
+
+    st.subheader(f"🏦 {banka_adi} | 📅 {donem}")
+    total_found = sum(1 for v in all_results.values() if v and v != "null")
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Toplam Alan", total_fields)
+    c2.metric("Bulunan", total_found)
+    c3.metric("Başarı", f"%{total_found/total_fields*100:.0f}")
+
+    for group in EXTRACTION_GROUPS:
+        found = sum(1 for f in group["fields"]
+                   if all_results.get(f["id"]) and all_results.get(f["id"]) != "null")
+        method = method_log.get(group["id"], "—")
+        with st.expander(f"📝 {group['name']} — {found}/{len(group['fields'])} | {method}"):
+            cols = st.columns(3)
+            for i, field in enumerate(group["fields"]):
+                val = all_results.get(field["id"])
+                with cols[i % 3]:
+                    st.metric(
+                        f"{field['label'][:30]} ({field['col']})",
+                        val if val and val != "null" else "⚠️ —"
+                    )
+
+    st.download_button(
+        "📥 Excel İndir",
+        res["excel_bytes"],
+        file_name=res["file_name"],
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key=f"download_{key_suffix}"
+    )
+
+
+uploaded_files = st.file_uploader(
+    "📄 PDF Rapor Yükle", type="pdf", accept_multiple_files=True
+)
+
+if uploaded_files and api_key:
+    st.caption(f"📚 {len(uploaded_files)} dosya yüklendi")
     if st.button("🚀 Analiz Et", type="primary"):
         client = get_client(api_key)
-        pdf_bytes = uploaded_file.getvalue()
-        all_results = {}
-        method_log = {}
+        # Yeni analiz: önceki sonuçları temizle
+        st.session_state["results"] = []
 
-        progress = st.progress(0, "Başlatılıyor...")
+        for f_idx, uploaded_file in enumerate(uploaded_files):
+            st.divider()
+            st.subheader(f"📄 {f_idx + 1}/{len(uploaded_files)} — {uploaded_file.name}")
 
-        progress.progress(5, "📄 PDF metne dönüştürülüyor...")
-        pages_text = extract_pages_text(pdf_bytes)
-        st.success(f"✅ {len(pages_text)} sayfa okundu")
+            pdf_bytes = uploaded_file.getvalue()
+            banka_adi, donem, all_results, method_log = process_single_pdf(client, pdf_bytes)
 
-        progress.progress(8, "🤖 Banka adı ve dönem tespiti...")
-        first_text = pages_text.get(0, "") + pages_text.get(1, "")
-        banka_adi, donem = extract_metadata(client, first_text)
-        st.info(f"🏦 **{banka_adi}** | 📅 **{donem}**")
+            # Excel'i şimdi oluştur ve byte olarak sakla (rerun'da kaybolmasın)
+            excel_bytes = create_excel(banka_adi, donem, all_results, method_log).getvalue()
+            st.session_state["results"].append({
+                "banka_adi": banka_adi,
+                "donem": donem,
+                "all_results": all_results,
+                "method_log": method_log,
+                "excel_bytes": excel_bytes,
+                "file_name": f"{banka_adi}_{donem}.xlsx",
+            })
 
-        total_groups = len(EXTRACTION_GROUPS)
+        st.success(f"🎉 Tüm dosyalar tamamlandı ({len(uploaded_files)} rapor)")
 
-        for g_idx, group in enumerate(EXTRACTION_GROUPS):
-            pct = 8 + int((g_idx / total_groups) * 87)
-            progress.progress(pct, f"🔍 {group['name']}...")
-
-            with st.status(f"📊 {group['name']}", expanded=False) as status:
-                page_indices = find_relevant_pages(pages_text, group["keywords"])
-                if not page_indices:
-                    page_indices = list(range(min(4, len(pages_text))))
-
-                context = build_text_context(pages_text, page_indices)
-                st.caption(f"İlgili sayfalar: {[i+1 for i in page_indices]}")
-
-                st.caption("1️⃣ Metin tabanlı extraction (Haiku)...")
-                result, success = extract_with_text(client, group, context, banka_adi, donem)
-
-                if success:
-                    method_log[group["id"]] = "Metin (Haiku)"
-                    found = sum(1 for v in result.values() if v and v != "null")
-                    status.update(
-                        label=f"✅ {group['name']} — {found}/{len(group['fields'])} | Metin",
-                        state="complete"
-                    )
-                else:
-                    st.caption("2️⃣ Daha geniş arama...")
-                    all_pages = list(range(min(10, len(pages_text))))
-                    wider_context = build_text_context(pages_text, all_pages)
-                    result2, _ = extract_with_text(client, group, wider_context, banka_adi, donem)
-                    for k, v in result2.items():
-                        if v and v != "null" and (not result.get(k) or result.get(k) == "null"):
-                            result[k] = v
-                    method_log[group["id"]] = "Metin Geniş (Haiku)"
-                    found = sum(1 for v in result.values() if v and v != "null")
-                    status.update(
-                        label=f"✅ {group['name']} — {found}/{len(group['fields'])} | Geniş",
-                        state="complete"
-                    )
-
-                all_results.update(result)
-                time.sleep(15)
-
-        progress.progress(100, "✅ Tamamlandı!")
-
-        st.divider()
-        total_found = sum(1 for v in all_results.values() if v and v != "null")
-
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Toplam Alan", total_fields)
-        c2.metric("Bulunan", total_found)
-        c3.metric("Başarı", f"%{total_found/total_fields*100:.0f}")
-
-        for group in EXTRACTION_GROUPS:
-            found = sum(1 for f in group["fields"]
-                       if all_results.get(f["id"]) and all_results.get(f["id"]) != "null")
-            method = method_log.get(group["id"], "—")
-            with st.expander(f"📝 {group['name']} — {found}/{len(group['fields'])} | {method}"):
-                cols = st.columns(3)
-                for i, field in enumerate(group["fields"]):
-                    val = all_results.get(field["id"])
-                    with cols[i % 3]:
-                        st.metric(
-                            f"{field['label'][:30]} ({field['col']})",
-                            val if val and val != "null" else "⚠️ —"
-                        )
-
-        excel_buf = create_excel(banka_adi, donem, all_results, method_log)
-        st.download_button(
-            "📥 Excel İndir",
-            excel_buf,
-            file_name=f"{banka_adi}_{donem}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-
-elif uploaded_file and not api_key:
+elif uploaded_files and not api_key:
     st.warning("⚠️ Sol sidebar'dan Anthropic API key girin.")
+
+# Sonuçları her zaman session_state'ten render et — indirme butonuna basınca
+# Streamlit script'i yeniden çalıştırır; buton koşulunun dışında olduğu için
+# tüm sonuçlar ve indirme butonları yerinde kalır.
+if st.session_state.get("results"):
+    st.divider()
+    st.header("📊 Sonuçlar")
+    for f_idx, res in enumerate(st.session_state["results"]):
+        st.divider()
+        render_results(res, key_suffix=f_idx)
